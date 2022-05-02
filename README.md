@@ -1,0 +1,1 @@
+# hotelling_law_cadcad
