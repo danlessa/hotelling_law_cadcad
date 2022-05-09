@@ -1,5 +1,6 @@
 # from cadcad.spaces import Space
 # from cadcad.dynamics import Block
+from inspect import Parameter
 import numpy as np
 from math import sqrt
 from random import choice
@@ -145,7 +146,6 @@ class HotellingLawModel():
     def world_state(self) -> WorldState:
         return WorldState(self.hotels, self.consumers)
 
-
     def step(self) -> None:
         self.consumers = realize_consumption(self.hotels, self.world_params)
         self.hotels = hotel_decisions(self.world_state, self.world_params)
@@ -155,3 +155,85 @@ class HotellingLawModel():
         for _ in range(n_steps):
             self.step()
             yield self.world_state
+
+
+# Legacy cadCAD Model Building Workflow
+# 1. Specify state components & parameters
+# 2. Specify the model structure / DAG
+# 3. Specify the model logic
+# 4. Specify the model execution (incl. param and state values)
+
+# 1a. Spaces
+
+Space = callable[str, dict]
+Block = callable[callable]
+
+HotelsSpace = Space('Hotels State',
+                    dict(hotels=list[Hotels]))
+
+MarketShare = Space('Market Share',
+                    dict(market_share=ConsumerState))
+
+# 1b. Parameters
+
+ModelParameters = Space('Parameters',
+                        dict(world_shape=tuple[int, int]))
+
+# 2.
+
+
+# 2 with type hinting on the functions
+realize_consumption_block = Block(realize_consumption)
+hotel_decisions_block = Block(hotel_decisions)
+
+# 2 with explicit spaces
+realize_consumption_block: Block = Block(realize_consumption,
+                                         input=HotelsSpace,
+                                         output=MarketShare)
+
+hotel_decisions_block: Block = Block(hotel_decisions_block,
+                                     input=HotelsSpace + MarketShare
+                                     output=HotelsSpace)
+
+model_block: Block = (realize_consumption_block >> hotel_decisions_block)
+
+# model_dag = b_1 >> (b_2 & b_3) >> b_4
+
+# 3. Done above
+
+# 4a. evolve one timestep
+
+initial_state = Point(
+    WorldState,
+    hotels=INITIAL_HOTELS,
+    market_share=INITIAL_MARKET_SHARE
+)
+
+parameters = Point(
+    ModelParameters,
+    world_shape=WORLD_SHAPE
+)
+
+new_model_state: WorldState = model_block.step(initial_state,
+                                   parameters)
+
+# 4b. run for 1000 timesteps, 20 MCs and some sweeps
+
+initial_state_to_sweep = PointList(
+    hotels=[None, None],
+    market_share=[None, None]
+)
+
+parameters_to_sweep = PointList(
+    world_shape=[None, None, None]
+)
+
+results_without_speed = model_block.simulate(initial_state,
+                                             parameters,
+                                             steps=1000,
+                                             samples=20)
+
+results_with_sweep = model_block.simulate(initial_state_to_sweep,
+                                          parameters_to_sweep,
+                                          steps=1000,
+                                          samples=20)
